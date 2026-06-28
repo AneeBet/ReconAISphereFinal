@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     AZURE_OPENAI_DEPLOYMENT: str = ""
 
     AZURE_STORAGE_CONNECTION_STRING: str = ""
+    AZURE_STORAGE_CONTAINER: str = ""
 
     AZURE_SQL_SERVER: str
     AZURE_SQL_DATABASE: str

@@ -137,7 +137,9 @@ require_auditor = require_roles(
 
     UserRole.ADMIN,
 
-    UserRole.AUDITOR
+    UserRole.AUDITOR,
+
+    UserRole.OPS
 
 )
 
@@ -152,4 +154,3 @@ require_viewer = require_roles(
     UserRole.VIEWER
 
 )
-

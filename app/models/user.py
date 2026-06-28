@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
 import uuid
@@ -70,57 +72,51 @@ class User(Base, BaseEntity):
         nullable=True
     )
 
-    organization = relationship(
-        "Organization",
+    #
+    # Relationships
+    #
+
+    organization: Mapped["Organization"] = relationship(
         back_populates="users"
     )
 
-    payment_files = relationship(
-        "PaymentFile",
-        back_populates="uploaded_by"
+    payment_files: Mapped[list["PaymentFile"]] = relationship(
+        back_populates="uploaded_by",
+        cascade="all, delete-orphan"
     )
 
-    investigation_cases = relationship(
-        "InvestigationCase",
+    investigation_cases: Mapped[list["InvestigationCase"]] = relationship(
         back_populates="owner"
     )
 
-    comments = relationship(
-        "Comment",
+    comments: Mapped[list["Comment"]] = relationship(
         back_populates="user"
     )
 
-    attachments = relationship(
-        "Attachment",
+    attachments: Mapped[list["Attachment"]] = relationship(
         back_populates="uploaded_by"
     )
 
-    notifications = relationship(
-        "Notification",
-        back_populates="user"
+    audit_logs: Mapped[list["AuditLog"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
     )
 
-    audit_logs = relationship(
-        "AuditLog",
-        back_populates="user"
+    ai_chat_history: Mapped[list["AIChatHistory"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
     )
 
-    ai_chat_history = relationship(
-        "AIChatHistory",
-        back_populates="user"
+    workflow_history: Mapped[list["WorkflowHistory"]] = relationship(
+        back_populates="changed_by",
+        cascade="all, delete-orphan"
     )
 
-    workflow_history = relationship(
-        "WorkflowHistory",
-        back_populates="changed_by"
-    )
-
-    system_settings = relationship(
-        "SystemSetting",
+    system_settings: Mapped[list["SystemSetting"]] = relationship(
         back_populates="updated_by"
     )
 
-    reconciliation_runs = relationship(
-        "ReconciliationRun",
-        back_populates="initiated_by"
+    reconciliation_runs: Mapped[list["ReconciliationRun"]] = relationship(
+        back_populates="initiated_by",
+        cascade="all, delete-orphan"
     )

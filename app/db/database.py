@@ -1,24 +1,16 @@
-from sqlalchemy import (
-    create_engine,
-    event
-)
-
-from sqlalchemy.orm import (
-    sessionmaker,
-    declarative_base
-)
-
-from azure.identity import (
-    ManagedIdentityCredential
-)
+import struct
 
 from urllib.parse import quote_plus
 
-import struct
+from azure.identity import ManagedIdentityCredential
 
-from app.core.config import (
-    settings
-)
+from sqlalchemy import create_engine
+from sqlalchemy import event
+
+from app.core.config import settings
+from app.db.base import Base
+
+import app.models
 
 
 SQL_COPT_SS_ACCESS_TOKEN = 1256
@@ -37,9 +29,13 @@ def get_access_token():
     )
 
     return struct.pack(
+
         f"<I{len(token_bytes)}s",
+
         len(token_bytes),
+
         token_bytes
+
     )
 
 
@@ -54,9 +50,12 @@ odbc_connection_string = (
 
 
 engine = create_engine(
+
     "mssql+pyodbc:///?odbc_connect="
     + quote_plus(odbc_connection_string),
+
     pool_pre_ping=True
+
 )
 
 
@@ -75,21 +74,8 @@ def provide_token(
     }
 
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+def create_database():
 
-Base = declarative_base()
-
-
-def get_db():
-
-    db = SessionLocal()
-
-    try:
-        yield db
-
-    finally:
-        db.close()
+    Base.metadata.create_all(
+        bind=engine
+    )

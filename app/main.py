@@ -1,9 +1,14 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import (
-    CORSMiddleware
-)
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.db.base import Base
+from app.db.database import engine
+
+# IMPORTANT:
+# Import all models so SQLAlchemy registers them
+import app.models
 
 from app.middleware.logging import (
     RequestLoggingMiddleware
@@ -24,12 +29,22 @@ from app.api.ai import router as ai_router
 from app.api.reports import router as reports_router
 from app.api.audit import router as audit_router
 from app.api.settings import router as settings_router
+from app.api.seed_users import (
+    router as seed_users_router
+)
 
 
 @asynccontextmanager
 async def lifespan(
     app: FastAPI
 ):
+    #
+    # Create database tables if they do not exist.
+    # Safe to execute on every startup.
+    #
+    Base.metadata.create_all(
+        bind=engine
+    )
 
     yield
 
@@ -70,6 +85,10 @@ register_exception_handlers(
 )
 
 
+#
+# API Routers
+#
+
 app.include_router(auth_router)
 app.include_router(dashboard_router)
 app.include_router(files_router)
@@ -81,6 +100,7 @@ app.include_router(ai_router)
 app.include_router(reports_router)
 app.include_router(audit_router)
 app.include_router(settings_router)
+app.include_router(seed_users_router)
 
 
 @app.get("/health")
