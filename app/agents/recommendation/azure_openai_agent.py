@@ -16,8 +16,6 @@ class AzureOpenAIRecommendationAgent:
         investigation_case
     ):
 
-        client = AzureOpenAIClient.client()
-
         prompt = f"""
 You are an enterprise operations advisor.
 
@@ -36,14 +34,10 @@ Return ONLY JSON.
 }}
 """
 
-        response = client.responses.create(
-
-            model=settings.AZURE_OPENAI_DEPLOYMENT,
-
-            input=prompt
-
+        response = AzureOpenAIClient.complete(
+            prompt
         )
 
         return JsonParser.parse(
-            response.output_text
+            response
         )

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi import Response
 
 from sqlalchemy.orm import Session
 
@@ -89,5 +90,42 @@ def export(
     ).export(
 
         request.report_type
+
+    )
+
+
+@router.get(
+
+    "/download/{report_name}"
+
+)
+def download(
+
+    report_name: str,
+
+    current_user=Depends(
+        require_viewer
+    ),
+
+    db: Session = Depends(
+        get_db
+    )
+
+):
+
+    data = ReportService(
+        ReportRepository(db)
+    ).download(report_name)
+
+    return Response(
+
+        content=data,
+
+        media_type="text/csv",
+
+        headers={
+            "Content-Disposition":
+            f'attachment; filename="{report_name}"'
+        }
 
     )

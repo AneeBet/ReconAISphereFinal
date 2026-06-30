@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class RunReconciliationRequest(BaseModel):
-    payment_file_id: UUID
+    payment_file_id: UUID | None = None
 
 
 class MatchInformation(BaseModel):
@@ -40,8 +40,3 @@ class ReconciliationWorkspaceResponse(BaseModel):
     unmatched: int
     exceptions: int
     results: list[ReconciliationItem]
-
-
-class ManualMatchRequest(BaseModel):
-    payment_transaction_id: UUID
-    bank_transaction_id: UUID

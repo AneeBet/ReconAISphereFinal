@@ -2,6 +2,7 @@ from datetime import datetime
 import uuid
 
 from sqlalchemy import DateTime
+from sqlalchemy import Boolean
 from sqlalchemy import ForeignKey
 from sqlalchemy import JSON
 from sqlalchemy import Numeric
@@ -81,6 +82,12 @@ class BankTransaction(Base, BaseEntity):
 
     status: Mapped[str] = mapped_column(
         String(50)
+    )
+
+    reconciled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False
     )
 
     raw_json: Mapped[dict | None] = mapped_column(

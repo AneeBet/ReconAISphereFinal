@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.bank import Bank
 from app.models.organization import Organization
 from app.models.user import User
 
@@ -18,6 +19,17 @@ class SeedUsersRepository:
         self.db.commit()
         self.db.refresh(organization)
         return organization
+
+    def get_bank(self, bic_swift):
+        return self.db.scalar(
+            select(Bank).where(Bank.bic_swift == bic_swift)
+        )
+
+    def create_bank(self, bank):
+        self.db.add(bank)
+        self.db.commit()
+        self.db.refresh(bank)
+        return bank
 
     def get_user(self, email):
         return self.db.scalar(

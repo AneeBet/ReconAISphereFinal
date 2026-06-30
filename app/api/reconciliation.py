@@ -16,7 +16,6 @@ from app.repositories.reconciliation_repository import (
 )
 
 from app.schemas.reconciliation import (
-    ManualMatchRequest,
     ReconciliationItem,
     RunReconciliationRequest,
 )
@@ -91,30 +90,3 @@ def get_results(
         ReconciliationRepository(db)
 
     ).results()
-
-
-@router.post(
-
-    "/manual-match"
-
-)
-def manual_match(
-
-    request: ManualMatchRequest,
-
-    current_user=Depends(
-        require_ops
-    ),
-
-    db: Session = Depends(
-        get_db
-    )
-
-):
-
-    return {
-
-        "message":
-        "Manual match completed successfully."
-
-    }

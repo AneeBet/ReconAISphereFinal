@@ -10,10 +10,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class MicrosoftLoginRequest(BaseModel):
-    access_token: str
-
-
 class LoginResponse(BaseModel):
     access_token: str
     refresh_token: str

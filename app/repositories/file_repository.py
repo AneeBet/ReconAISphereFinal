@@ -3,7 +3,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.bank_transaction import BankTransaction
 from app.models.payment_file import PaymentFile
+from app.models.payment_transaction import PaymentTransaction
 
 
 class FileRepository:
@@ -24,6 +26,35 @@ class FileRepository:
         self.db.refresh(payment_file)
 
         return payment_file
+
+    def save_payment_transactions(
+        self,
+        transactions: list[PaymentTransaction]
+    ):
+
+        if not transactions:
+            return
+
+        self.db.add_all(transactions)
+        self.db.commit()
+
+    def save_bank_transactions(
+        self,
+        transactions: list[BankTransaction]
+    ):
+
+        if not transactions:
+            return
+
+        self.db.add_all(transactions)
+        self.db.commit()
+
+    def save_legs(self, legs):
+        if not legs:
+            return
+        self.db.add_all(legs)
+        self.db.commit()
+
 
     def get_all(
         self

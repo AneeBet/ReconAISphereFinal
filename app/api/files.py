@@ -41,16 +41,24 @@ router = APIRouter(
 
 @router.post(
 
-    "/upload",
-
-    response_model=PaymentFileResponse
+    "/upload-batch"
 
 )
-async def upload(
+async def upload_batch(
 
     bank_id: UUID = Form(...),
 
-    file: UploadFile = File(...),
+    payment: UploadFile | None = File(None),
+
+    bank: UploadFile | None = File(None),
+
+    aml: UploadFile | None = File(None),
+
+    fx: UploadFile | None = File(None),
+
+    correspondent: UploadFile | None = File(None),
+
+    settlement: UploadFile | None = File(None),
 
     current_user=Depends(
         require_ops
@@ -66,9 +74,16 @@ async def upload(
 
         FileRepository(db)
 
-    ).upload(
+    ).upload_batch(
 
-        file,
+        {
+            "payment": payment,
+            "bank": bank,
+            "aml": aml,
+            "fx": fx,
+            "correspondent": correspondent,
+            "settlement": settlement,
+        },
 
         bank_id,
 

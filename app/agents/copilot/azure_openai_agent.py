@@ -2,39 +2,50 @@ from app.agents.common.azure_client import (
     AzureOpenAIClient
 )
 
+from app.agents.common.json_parser import (
+    JsonParser
+)
+
 from app.core.config import settings
 
 
-class AzureOpenAICopilotAgent:
+class AzureOpenAIExceptionAgent:
 
-    def chat(
+    def analyze(
         self,
-        question,
-        context
+        reconciliation,
+        payment_transaction,
+        bank_transaction
     ):
 
-        client = AzureOpenAIClient.client()
-
         prompt = f"""
-You are ReconAI Copilot.
+You are an enterprise reconciliation analyst.
 
-Context:
+Analyze the exception.
 
-{context}
+Reconciliation:
+{reconciliation}
 
-Question:
+Payment:
+{payment_transaction}
 
-{question}
+Bank:
+{bank_transaction}
 
-Provide a concise enterprise response.
+Return ONLY valid JSON.
+
+{{
+    "root_cause":"",
+    "confidence":0,
+    "business_explanation":"",
+    "operational_domain":""
+}}
 """
 
-        response = client.responses.create(
-
-            model=settings.AZURE_OPENAI_DEPLOYMENT,
-
-            input=prompt
-
+        response = AzureOpenAIClient.complete(
+            prompt
         )
 
-        return response.output_text
+        return JsonParser.parse(
+            response
+        )

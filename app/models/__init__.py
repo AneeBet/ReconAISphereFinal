@@ -12,17 +12,14 @@ from .reconciliation_result import ReconciliationResult
 from .exception import Exception
 from .investigation_case import InvestigationCase
 
-from .ai_insight import AIInsight
-from .exchange_rate import ExchangeRate
-
 from .comment import Comment
 from .attachment import Attachment
 
 from .audit_log import AuditLog
 from .ai_chat_history import AIChatHistory
 
-from .system_setting import SystemSetting
 from .workflow_history import WorkflowHistory
+from .transaction_leg import TransactionLeg
 
 
 __all__ = [
@@ -36,12 +33,10 @@ __all__ = [
     "ReconciliationResult",
     "Exception",
     "InvestigationCase",
-    "AIInsight",
-    "ExchangeRate",
     "Comment",
     "Attachment",
     "AuditLog",
     "AIChatHistory",
-    "SystemSetting",
     "WorkflowHistory",
+    "TransactionLeg",
 ]

@@ -1,3 +1,4 @@
+
 from app.agents.common.azure_client import (
     AzureOpenAIClient
 )
@@ -24,8 +25,6 @@ class AzureOpenAIMatchingAgent:
         score
 
     ):
-
-        client = AzureOpenAIClient.client()
 
         prompt = f"""
 You are ReconAI's Enterprise Matching Agent.
@@ -108,68 +107,31 @@ Do not return markdown.
 Do not explain outside JSON.
 """
 
-        response = client.responses.create(
+        try:
 
-            model=settings.AZURE_OPENAI_DEPLOYMENT,
+            output = AzureOpenAIClient.complete(prompt)
 
-            input=prompt
+            result = JsonParser.parse(output)
 
-        )
+        except Exception:
 
-        result = JsonParser.parse(
-
-            response.output_text
-
-        )
+            result = {}
 
         return {
 
-            "decision": result.get(
+            "decision": result.get("decision", "REVIEW"),
 
-                "decision",
-
-                "REVIEW"
-
-            ),
-
-            "confidence": result.get(
-
-                "confidence",
-
-                score
-
-            ),
+            "confidence": result.get("confidence", score),
 
             "reason": result.get(
-
                 "reason",
-
-                ""
-
+                "AI review unavailable; defaulted to rule engine score."
             ),
 
-            "matched_fields": result.get(
+            "matched_fields": result.get("matched_fields", []),
 
-                "matched_fields",
+            "mismatched_fields": result.get("mismatched_fields", []),
 
-                []
-
-            ),
-
-            "mismatched_fields": result.get(
-
-                "mismatched_fields",
-
-                []
-
-            ),
-
-            "risk": result.get(
-
-                "risk",
-
-                "LOW"
-
-            )
+            "risk": result.get("risk", "LOW")
 
         }

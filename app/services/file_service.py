@@ -1,43 +1,47 @@
-import uuid
+from datetime import UTC
+from datetime import datetime
+from uuid import UUID
 
-from app.models.payment_file import (
-    PaymentFile,
-    ProcessingStatus,
+from fastapi import HTTPException
+from starlette.status import HTTP_404_NOT_FOUND
+
+from app.mappers.investigation_mapper import (
+    InvestigationMapper,
 )
 
-from app.parser.payment_parser import (
-    PaymentParser,
+from app.models.attachment import (
+    Attachment,
+)
+
+from app.models.comment import (
+    Comment,
+)
+
+from app.models.investigation_case import (
+    CaseStatus,
 )
 
 from app.repositories.audit_repository import (
     AuditRepository,
 )
 
-from app.repositories.file_repository import (
-    FileRepository,
+from app.repositories.investigation_repository import (
+    InvestigationRepository,
 )
 
 from app.services.audit_service import (
     AuditService,
 )
 
-from app.storage.azure_blob_storage import (
-    AzureBlobStorage,
-)
 
-
-class FileService:
+class InvestigationService:
 
     def __init__(
         self,
-        repository: FileRepository
+        repository: InvestigationRepository
     ):
 
         self.repository = repository
-
-        self.storage = AzureBlobStorage()
-
-        self.parser = PaymentParser()
 
         self.audit = AuditService(
 
@@ -49,69 +53,171 @@ class FileService:
 
         )
 
-    async def upload(
+    def get_all(
 
-        self,
-
-        file,
-
-        bank_id,
-
-        user_id
+        self
 
     ):
 
-        blob_name = (
+        return [
 
-            f"{uuid.uuid4()}_{file.filename}"
+            InvestigationMapper.to_response(
 
-        )
+                case
 
-        blob_url = self.storage.upload(
+            ).overview
 
-            blob_name,
+            for case in self.repository.get_all()
 
-            await file.read()
+        ]
 
-        )
+    def get_case(
 
-        await file.seek(0)
+        self,
 
-        dataframe = await self.parser.parse(
+        case_id: UUID
 
-            file
+    ):
 
-        )
+        case = self.repository.get_case(
 
-        payment_file = PaymentFile(
-
-            bank_id=bank_id,
-
-            file_name=blob_name,
-
-            original_name=file.filename,
-
-            blob_url=blob_url,
-
-            file_type=file.filename.split(".")[-1],
-
-            checksum=str(uuid.uuid4()),
-
-            uploaded_by_id=user_id,
-
-            processing_status=ProcessingStatus.UPLOADED,
-
-            total_records=len(dataframe),
-
-            valid_records=len(dataframe),
-
-            invalid_records=0
+            case_id
 
         )
 
-        payment_file = self.repository.create(
+        if case is None:
 
-            payment_file
+            raise HTTPException(
+
+                status_code=HTTP_404_NOT_FOUND,
+
+                detail="Investigation case not found."
+
+            )
+
+        return InvestigationMapper.to_response(
+
+            case
+
+        )
+
+    def update_status(
+
+        self,
+
+        case_id: UUID,
+
+        status: CaseStatus
+
+    ):
+
+        case = self.repository.get_case(
+
+            case_id
+
+        )
+
+        if case is None:
+
+            raise HTTPException(
+
+                status_code=HTTP_404_NOT_FOUND,
+
+                detail="Investigation case not found."
+
+            )
+
+        old_value = {
+
+            "status": case.status.value
+
+        }
+
+        case.status = status
+
+        if status in (
+
+            CaseStatus.RESOLVED,
+
+            CaseStatus.CLOSED,
+
+        ):
+
+            case.closed_at = datetime.now(
+
+                UTC
+
+            )
+
+        updated = self.repository.update(
+
+            case
+
+        )
+
+        self.audit.log(
+
+            user_id=case.owner_id,
+
+            entity_type="InvestigationCase",
+
+            entity_id=case.id,
+
+            action="STATUS_CHANGED",
+
+            old_value=old_value,
+
+            new_value={
+
+                "status": status.value
+
+            }
+
+        )
+
+        return updated
+
+    def add_comment(
+
+        self,
+
+        case_id: UUID,
+
+        user_id: UUID,
+
+        comment: str
+
+    ):
+
+        case = self.repository.get_case(
+
+            case_id
+
+        )
+
+        if case is None:
+
+            raise HTTPException(
+
+                status_code=HTTP_404_NOT_FOUND,
+
+                detail="Investigation case not found."
+
+            )
+
+        entity = Comment(
+
+            case_id=case_id,
+
+            user_id=user_id,
+
+            comment=comment
+
+        )
+
+        entity = self.repository.add_comment(
+
+            entity
 
         )
 
@@ -119,31 +225,80 @@ class FileService:
 
             user_id=user_id,
 
-            entity_type="PaymentFile",
+            entity_type="InvestigationCase",
 
-            entity_id=payment_file.id,
+            entity_id=case_id,
 
-            action="UPLOAD",
+            action="COMMENT_ADDED"
+
+        )
+
+        return entity
+
+    def add_attachment(
+
+        self,
+
+        case_id: UUID,
+
+        user_id: UUID,
+
+        file_name: str,
+
+        blob_url: str
+
+    ):
+
+        case = self.repository.get_case(
+
+            case_id
+
+        )
+
+        if case is None:
+
+            raise HTTPException(
+
+                status_code=HTTP_404_NOT_FOUND,
+
+                detail="Investigation case not found."
+
+            )
+
+        entity = Attachment(
+
+            case_id=case_id,
+
+            uploaded_by_id=user_id,
+
+            file_name=file_name,
+
+            blob_url=blob_url
+
+        )
+
+        entity = self.repository.add_attachment(
+
+            entity
+
+        )
+
+        self.audit.log(
+
+            user_id=user_id,
+
+            entity_type="InvestigationCase",
+
+            entity_id=case_id,
+
+            action="ATTACHMENT_ADDED",
 
             new_value={
 
-                "file_name": payment_file.original_name,
-
-                "records": payment_file.total_records,
-
-                "bank_id": str(bank_id)
+                "file_name": file_name
 
             }
 
         )
 
-        return payment_file
-
-    def history(
-
-        self
-
-    ):
-
-        return self.repository.get_all()
-
+        return entity

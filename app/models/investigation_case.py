@@ -91,12 +91,6 @@ class InvestigationCase(Base, BaseEntity):
         back_populates="investigation_cases"
     )
 
-    ai_insights = relationship(
-        "AIInsight",
-        back_populates="case",
-        cascade="all, delete-orphan"
-    )
-
     comments = relationship(
         "Comment",
         back_populates="case",

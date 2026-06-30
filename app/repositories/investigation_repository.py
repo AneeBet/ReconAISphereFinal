@@ -56,10 +56,6 @@ class InvestigationRepository:
                 ),
 
                 selectinload(
-                    InvestigationCase.ai_insights
-                ),
-
-                selectinload(
                     InvestigationCase.comments
                 ).selectinload(
                     Comment.user
@@ -136,4 +132,3 @@ class InvestigationRepository:
         self.db.refresh(attachment)
 
         return attachment
-

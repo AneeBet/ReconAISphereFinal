@@ -5,9 +5,9 @@ from pydantic import BaseModel
 
 class ReportRequest(BaseModel):
     report_type: str
-    start_date: datetime
-    end_date: datetime
-    format: str = "PDF"
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    format: str = "CSV"
 
 
 class ReportResponse(BaseModel):

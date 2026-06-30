@@ -5,6 +5,19 @@ from app.agents.matching.factory import (
     MatchingAgentFactory,
 )
 
+from app.models.exception import (
+    Exception,
+    ExceptionStatus,
+    ExceptionType,
+    Severity,
+)
+
+from app.models.investigation_case import (
+    CasePriority,
+    CaseStatus,
+    InvestigationCase,
+)
+
 from app.models.reconciliation_result import (
     MatchType,
     ReconciliationResult,
@@ -18,6 +31,10 @@ from app.models.reconciliation_run import (
 
 from app.reconciliation.reconciliation_service import (
     EnterpriseReconciliationService,
+)
+
+from app.mappers.reconciliation_mapper import (
+    ReconciliationMapper,
 )
 
 from app.repositories.audit_repository import (
@@ -94,21 +111,17 @@ class ReconciliationService:
 
         )
 
-        payments = self.repository.get_payment_transactions(
-
-            payment_file_id
-
+        payments = (
+            self.repository.get_payment_transactions(payment_file_id)
+            if payment_file_id
+            else self.repository.get_pending_payment_transactions()
         )
 
         if not payments:
 
             return run
 
-        bank_transactions = self.repository.get_bank_transactions(
-
-            payments[0].bank_id
-
-        )
+        bank_transactions = self.repository.get_all_bank_transactions()
 
         engine_results = self.engine.reconcile(
 
@@ -119,6 +132,8 @@ class ReconciliationService:
         )
 
         reconciliation_results = []
+
+        exception_payloads = []
 
         matched = 0
 
@@ -190,42 +205,57 @@ class ReconciliationService:
 
                 exceptions += 1
 
-            reconciliation_results.append(
+            reconciliation_result = ReconciliationResult(
 
-                ReconciliationResult(
+                run_id=run.id,
 
-                    run_id=run.id,
+                payment_transaction_id=result["payment"].id,
 
-                    payment_transaction_id=result["payment"].id,
+                bank_transaction_id=(
 
-                    bank_transaction_id=(
+                    result["bank"].id
 
-                        result["bank"].id
+                    if result["bank"]
 
-                        if result["bank"]
+                    else None
 
-                        else None
+                ),
 
-                    ),
+                match_type=match_type,
 
-                    match_type=match_type,
+                confidence_score=ai["confidence"],
 
-                    confidence_score=ai["confidence"],
+                matched_by="ReconAI",
 
-                    matched_by="ReconAI",
+                matched_at=datetime.now(UTC),
 
-                    matched_at=datetime.now(UTC),
-
-                    reconciliation_status=status
-
-                )
+                reconciliation_status=status
 
             )
+
+            reconciliation_results.append(reconciliation_result)
+
+            if status == ReconciliationStatus.EXCEPTION:
+
+                exception_payloads.append(
+                    (
+                        reconciliation_result,
+                        result["payment"],
+                        result["bank"]
+                    )
+                )
 
         self.repository.save_results(
 
             reconciliation_results
 
+        )
+
+        self._raise_exceptions(exception_payloads)
+
+        self.repository.mark_reconciled(
+            payments,
+            [r["bank"] for r in engine_results]
         )
 
         run.completed_at = datetime.now(
@@ -288,4 +318,104 @@ class ReconciliationService:
 
     ):
 
-        return self.repository.get_results()
+        return [
+            ReconciliationMapper.to_result(result)
+            for result in self.repository.get_results()
+        ]
+
+    def _raise_exceptions(
+        self,
+        payloads
+    ):
+
+        if not payloads:
+            return
+
+        exception_records = []
+
+        for reconciliation_result, payment, bank in payloads:
+
+            failed_leg = self.repository.get_failed_leg(payment.end_to_end_id)
+
+            exception_type, severity = self._classify(payment, bank, failed_leg)
+
+            exception_records.append(
+                Exception(
+                    reconciliation_result_id=reconciliation_result.id,
+                    exception_type=exception_type,
+                    severity=severity,
+                    status=ExceptionStatus.OPEN,
+                    detected_at=datetime.now(UTC)
+                )
+            )
+
+        self.repository.save_exceptions(exception_records)
+
+        cases = []
+
+        for index, exception_record in enumerate(exception_records, start=1):
+
+            payment = payloads[index - 1][1]
+
+            failed_leg = self.repository.get_failed_leg(payment.end_to_end_id)
+
+            stuck = (
+                f" — stuck at {failed_leg.stage.value} "
+                f"({failed_leg.status.value})"
+                if failed_leg else ""
+            )
+
+            cases.append(
+                InvestigationCase(
+                    exception_id=exception_record.id,
+                    case_number=(
+                        f"CASE-{datetime.now(UTC):%Y%m%d}-"
+                        f"{exception_record.id.hex[:8].upper()}"
+                    ),
+                    title=(
+                        f"{exception_record.exception_type.value} exception "
+                        f"on {payment.transaction_reference}{stuck}"
+                    ),
+                    description=(
+                        "Auto-generated investigation case from "
+                        "reconciliation run."
+                    ),
+                    priority=self._priority(exception_record.severity),
+                    status=CaseStatus.OPEN
+                )
+            )
+
+        self.repository.save_cases(cases)
+
+    @staticmethod
+    def _classify(payment, bank, failed_leg=None):
+
+        if failed_leg is not None:
+            return ExceptionType.MISSING, Severity.HIGH
+
+        if bank is None:
+            return ExceptionType.MISSING, Severity.HIGH
+
+        if str(payment.currency) != str(bank.currency):
+            return ExceptionType.FX, Severity.MEDIUM
+
+        if abs(float(payment.amount) - float(bank.amount)) > 0.01:
+            return ExceptionType.AMOUNT, Severity.HIGH
+
+        if payment.settlement_date and bank.settlement_date:
+            if payment.settlement_date != bank.settlement_date:
+                return ExceptionType.SETTLEMENT, Severity.LOW
+
+        return ExceptionType.REFERENCE, Severity.LOW
+
+    @staticmethod
+    def _priority(severity):
+
+        mapping = {
+            Severity.CRITICAL: CasePriority.CRITICAL,
+            Severity.HIGH: CasePriority.HIGH,
+            Severity.MEDIUM: CasePriority.MEDIUM,
+            Severity.LOW: CasePriority.LOW,
+        }
+
+        return mapping.get(severity, CasePriority.LOW)

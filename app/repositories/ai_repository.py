@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
 from app.models.ai_chat_history import AIChatHistory
-from app.models.ai_insight import AIInsight
+from app.models.exception import Exception
 from app.models.investigation_case import InvestigationCase
+from app.models.reconciliation_result import ReconciliationResult
 
 
 class AIRepository:
@@ -60,8 +61,23 @@ class AIRepository:
             select(InvestigationCase)
             .options(
                 selectinload(
-                    InvestigationCase.ai_insights
+                    InvestigationCase.exception
                 )
+                .selectinload(
+                    Exception.reconciliation_result
+                )
+                .selectinload(
+                    ReconciliationResult.payment_transaction
+                ),
+                selectinload(
+                    InvestigationCase.exception
+                )
+                .selectinload(
+                    Exception.reconciliation_result
+                )
+                .selectinload(
+                    ReconciliationResult.bank_transaction
+                ),
             )
             .where(
                 InvestigationCase.id == case_id
@@ -71,23 +87,3 @@ class AIRepository:
         return self.db.scalar(
             statement
         )
-
-    def latest_insight(
-        self,
-        case_id: UUID
-    ) -> AIInsight | None:
-
-        statement = (
-            select(AIInsight)
-            .where(
-                AIInsight.case_id == case_id
-            )
-            .order_by(
-                AIInsight.created_at.desc()
-            )
-        )
-
-        return self.db.scalar(
-            statement
-        )
-

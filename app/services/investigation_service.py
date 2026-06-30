@@ -5,14 +5,6 @@ from uuid import UUID
 from fastapi import HTTPException
 from starlette.status import HTTP_404_NOT_FOUND
 
-from app.agents.exception.factory import (
-    ExceptionAnalysisAgentFactory,
-)
-
-from app.agents.recommendation.factory import (
-    RecommendationAgentFactory,
-)
-
 from app.mappers.investigation_mapper import (
     InvestigationMapper,
 )
@@ -58,18 +50,6 @@ class InvestigationService:
                 repository.db
 
             )
-
-        )
-
-        self.exception_agent = (
-
-            ExceptionAnalysisAgentFactory.create()
-
-        )
-
-        self.recommendation_agent = (
-
-            RecommendationAgentFactory.create()
 
         )
 
@@ -322,98 +302,3 @@ class InvestigationService:
         )
 
         return entity
-
-    def ai_explanation(
-
-        self,
-
-        case_id: UUID
-
-    ):
-
-        case = self.repository.get_case(
-
-            case_id
-
-        )
-
-        if case is None:
-
-            raise HTTPException(
-
-                status_code=HTTP_404_NOT_FOUND,
-
-                detail="Investigation case not found."
-
-            )
-
-        reconciliation = (
-
-            case.exception.reconciliation_result
-
-        )
-
-        self.audit.log(
-
-            user_id=case.owner_id,
-
-            entity_type="InvestigationCase",
-
-            entity_id=case.id,
-
-            action="AI_EXPLANATION"
-
-        )
-
-        return self.exception_agent.analyze(
-
-            reconciliation,
-
-            reconciliation.payment_transaction,
-
-            reconciliation.bank_transaction
-
-        )
-
-    def ai_recommendation(
-
-        self,
-
-        case_id: UUID
-
-    ):
-
-        case = self.repository.get_case(
-
-            case_id
-
-        )
-
-        if case is None:
-
-            raise HTTPException(
-
-                status_code=HTTP_404_NOT_FOUND,
-
-                detail="Investigation case not found."
-
-            )
-
-        self.audit.log(
-
-            user_id=case.owner_id,
-
-            entity_type="InvestigationCase",
-
-            entity_id=case.id,
-
-            action="AI_RECOMMENDATION"
-
-        )
-
-        return self.recommendation_agent.recommend(
-
-            case
-
-        )
-

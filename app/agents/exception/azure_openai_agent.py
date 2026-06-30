@@ -9,6 +9,7 @@ from app.agents.common.json_parser import (
 from app.core.config import settings
 
 
+
 class AzureOpenAIExceptionAgent:
 
     def analyze(

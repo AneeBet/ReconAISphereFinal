@@ -112,10 +112,6 @@ class User(Base, BaseEntity):
         cascade="all, delete-orphan"
     )
 
-    system_settings: Mapped[list["SystemSetting"]] = relationship(
-        back_populates="updated_by"
-    )
-
     reconciliation_runs: Mapped[list["ReconciliationRun"]] = relationship(
         back_populates="initiated_by",
         cascade="all, delete-orphan"

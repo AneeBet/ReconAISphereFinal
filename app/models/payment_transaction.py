@@ -3,6 +3,7 @@ from enum import Enum
 import uuid
 
 from sqlalchemy import DateTime
+from sqlalchemy import Boolean
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy import ForeignKey
 from sqlalchemy import JSON
@@ -26,9 +27,9 @@ class PaymentStatus(str, Enum):
 class PaymentTransaction(Base, BaseEntity):
     __tablename__ = "payment_transactions"
 
-    payment_file_id: Mapped[uuid.UUID] = mapped_column(
+    payment_file_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("payment_files.id"),
-        nullable=False,
+        nullable=True,
         index=True
     )
 
@@ -96,6 +97,12 @@ class PaymentTransaction(Base, BaseEntity):
     status: Mapped[PaymentStatus] = mapped_column(
         SqlEnum(PaymentStatus),
         default=PaymentStatus.PENDING
+    )
+
+    reconciled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False
     )
 
     raw_json: Mapped[dict | None] = mapped_column(

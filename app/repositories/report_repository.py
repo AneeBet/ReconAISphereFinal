@@ -1,6 +1,7 @@
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 
 from app.models.payment_transaction import PaymentTransaction
 from app.models.reconciliation_result import ReconciliationResult
@@ -51,4 +52,29 @@ class ReportRepository:
 
             ).all()
 
+        )
+
+    def reconciliation_rows(self):
+        return list(
+            self.db.scalars(
+                select(ReconciliationResult).options(
+                    selectinload(ReconciliationResult.payment_transaction),
+                    selectinload(ReconciliationResult.bank_transaction),
+                )
+            ).all()
+        )
+
+    def exception_rows(self):
+        return list(
+            self.db.scalars(
+                select(Exception).options(
+                    selectinload(Exception.reconciliation_result)
+                    .selectinload(ReconciliationResult.payment_transaction)
+                )
+            ).all()
+        )
+
+    def transaction_rows(self):
+        return list(
+            self.db.scalars(select(PaymentTransaction)).all()
         )

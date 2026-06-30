@@ -1,3 +1,4 @@
+from app.models.bank import Bank
 from app.models.organization import Organization
 from app.models.user import User, UserRole
 from app.repositories.seed_users_repository import SeedUsersRepository
@@ -67,8 +68,36 @@ class SeedUsersService:
 
             created.append(email)
 
+        banks = [
+            ("Global Bank A", "GLBAINBBXXX", "India", "INR"),
+            ("Overseas Bank B", "OVBBUS33XXX", "United States", "USD"),
+        ]
+
+        seeded_banks = []
+
+        for bank_name, bic, country, currency in banks:
+
+            if self.repository.get_bank(bic):
+                continue
+
+            bank = self.repository.create_bank(
+                Bank(
+                    organization_id=organization.id,
+                    bank_name=bank_name,
+                    bic_swift=bic,
+                    country=country,
+                    currency=currency,
+                    is_active=True
+                )
+            )
+
+            seeded_banks.append(
+                {"id": str(bank.id), "bank_name": bank.bank_name, "bic": bic}
+            )
+
         return {
             "organization": organization.name,
             "created": created,
+            "banks": seeded_banks,
             "password": "Recon@123"
         }

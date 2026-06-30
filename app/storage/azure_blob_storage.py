@@ -46,3 +46,19 @@ class AzureBlobStorage:
         )
 
         return blob.url
+
+    def download(
+
+        self,
+
+        file_name
+
+    ):
+
+        blob = self.container.get_blob_client(
+
+            file_name
+
+        )
+
+        return blob.download_blob().readall()

@@ -45,23 +45,11 @@ class InvestigationMapper:
 
             ),
 
-            ai_explanation=(
-                case.ai_insights[0].explanation
-                if case.ai_insights
-                else None
-            ),
+            ai_explanation=None,
 
-            ai_recommendation=(
-                case.ai_insights[0].recommendation
-                if case.ai_insights
-                else None
-            ),
+            ai_recommendation=None,
 
-            confidence_score=(
-                float(case.ai_insights[0].confidence)
-                if case.ai_insights
-                else None
-            ),
+            confidence_score=None,
 
             related_transactions=[
 
