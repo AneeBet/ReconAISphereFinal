@@ -19,10 +19,21 @@ class AIChatMessage(BaseModel):
     created_at: datetime
 
 
+class EvidenceItem(BaseModel):
+    field: str
+    payment: str
+    bank: str
+    result: str
+
+
 class AIInsightResponse(BaseModel):
-    explanation: str
-    recommendation: str
+    summary: str
+    root_cause: str
+    business_impact: str
+    operational_domain: str
     confidence: float
+    evidence: list[EvidenceItem]
+    recommended_actions: list[str]
 
 
 class AIChatResponse(BaseModel):

@@ -1,19 +1,40 @@
+from datetime import datetime
+from datetime import timezone
+
+from langfuse import observe
 
 from app.agents.common.azure_client import (
-    AzureOpenAIClient
+    AzureOpenAIClient,
 )
 
 from app.agents.common.json_parser import (
-    JsonParser
+    JsonParser,
 )
 
-from app.core.config import (
-    settings
-)
+
+USECASE_ID = "ecb6bd82-1937-4530-a528-0476d41f5654"
+
+AGENT_ID = 172
+
+AGENT_NAME = "Intelligent Matching"
+
+ENVIRONMENT = "production"
+
+LLM_PROVIDER = "Azure OpenAI"
+
+
+def get_utc_now() -> str:
+
+    return (
+        datetime.now(timezone.utc)
+        .strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        + "+00"
+    )
 
 
 class AzureOpenAIMatchingAgent:
 
+    @observe()
     def validate(
 
         self,
@@ -22,7 +43,7 @@ class AzureOpenAIMatchingAgent:
 
         bank,
 
-        score
+        score,
 
     ):
 
@@ -107,31 +128,64 @@ Do not return markdown.
 Do not explain outside JSON.
 """
 
-        try:
+        completion_start_time = get_utc_now()
 
-            output = AzureOpenAIClient.complete(prompt)
+        output = AzureOpenAIClient.complete(
 
-            result = JsonParser.parse(output)
+            prompt,
 
-        except Exception:
+            metadata={
 
-            result = {}
+                "agent_id": AGENT_ID,
+
+                "agent_name": AGENT_NAME,
+
+                "usecase_id": USECASE_ID,
+
+                "environment": ENVIRONMENT,
+
+                "llm_provider": LLM_PROVIDER,
+
+                "node": "intelligent_matching",
+
+                "completion_start_time": completion_start_time,
+
+            }
+
+        )
+
+        result = JsonParser.parse(output)
 
         return {
 
-            "decision": result.get("decision", "REVIEW"),
+            "decision": result.get(
+                "decision",
+                "REVIEW"
+            ),
 
-            "confidence": result.get("confidence", score),
+            "confidence": result.get(
+                "confidence",
+                score
+            ),
 
             "reason": result.get(
                 "reason",
                 "AI review unavailable; defaulted to rule engine score."
             ),
 
-            "matched_fields": result.get("matched_fields", []),
+            "matched_fields": result.get(
+                "matched_fields",
+                []
+            ),
 
-            "mismatched_fields": result.get("mismatched_fields", []),
+            "mismatched_fields": result.get(
+                "mismatched_fields",
+                []
+            ),
 
-            "risk": result.get("risk", "LOW")
+            "risk": result.get(
+                "risk",
+                "LOW"
+            )
 
         }

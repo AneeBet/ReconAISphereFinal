@@ -1,6 +1,11 @@
-from openai import OpenAI
+from langfuse import get_client
+from langfuse.openai import OpenAI
 
 from app.core.config import settings
+
+
+# Initialize Langfuse once
+langfuse = get_client()
 
 
 class AzureOpenAIClient:
@@ -14,7 +19,7 @@ class AzureOpenAIClient:
 
             cls._client = OpenAI(
 
-                base_url=settings.AZURE_OPENAI_ENDPOINT,
+                base_url=f"{settings.AZURE_OPENAI_ENDPOINT}/openai/v1",
 
                 api_key=settings.AZURE_OPENAI_KEY,
 
@@ -27,16 +32,22 @@ class AzureOpenAIClient:
         return cls._client
 
     @classmethod
-    def complete(cls, prompt, temperature=0):
-        """Single entry point for all agents. Deterministic, resilient."""
+    def complete(
+        cls,
+        prompt: str,
+        temperature: float = 0,
+        **kwargs
+    ):
+
+        # We are intentionally ignoring metadata for now.
+        # First verify that Langfuse captures traces.
+        kwargs.pop("metadata", None)
 
         response = cls.client().responses.create(
 
             model=settings.AZURE_OPENAI_DEPLOYMENT,
 
-            input=prompt,
-
-            temperature=temperature
+            input=prompt
 
         )
 

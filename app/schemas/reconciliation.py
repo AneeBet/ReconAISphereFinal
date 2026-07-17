@@ -4,10 +4,6 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
-class RunReconciliationRequest(BaseModel):
-    payment_file_id: UUID | None = None
-
-
 class MatchInformation(BaseModel):
     match_type: str
     confidence: float

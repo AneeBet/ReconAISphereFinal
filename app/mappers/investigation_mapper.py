@@ -26,6 +26,8 @@ class InvestigationMapper:
 
                 case_number=case.case_number,
 
+                transaction_reference=payment.transaction_reference,
+                
                 title=case.title,
 
                 description=case.description,

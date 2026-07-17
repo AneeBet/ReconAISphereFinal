@@ -5,6 +5,8 @@ from app.agents.matching.factory import (
     MatchingAgentFactory,
 )
 
+from datetime import timedelta
+
 from app.models.exception import (
     Exception,
     ExceptionStatus,
@@ -27,6 +29,10 @@ from app.models.reconciliation_result import (
 from app.models.reconciliation_run import (
     ReconciliationRun,
     ReconciliationRunStatus,
+)
+
+from app.models.payment_transaction import (
+    PaymentStatus,
 )
 
 from app.reconciliation.reconciliation_service import (
@@ -77,8 +83,6 @@ class ReconciliationService:
 
         self,
 
-        payment_file_id,
-
         initiated_by
 
     ):
@@ -111,13 +115,49 @@ class ReconciliationService:
 
         )
 
-        payments = (
-            self.repository.get_payment_transactions(payment_file_id)
-            if payment_file_id
-            else self.repository.get_pending_payment_transactions()
-        )
+        payments = self.repository.get_pending_payment_transactions()
 
         if not payments:
+
+            run.completed_at = datetime.now(UTC)
+
+            run.total_transactions = 0
+
+            run.matched = 0
+
+            run.unmatched = 0
+
+            run.exceptions = 0
+
+            run.ai_processed = 0
+
+            run.status = ReconciliationRunStatus.COMPLETED
+
+            self.repository.update_run(run)
+
+            self.audit.log(
+
+                user_id=initiated_by,
+
+                entity_type="ReconciliationRun",
+
+                entity_id=run.id,
+
+                action="COMPLETED",
+
+                new_value={
+
+                    "matched": 0,
+
+                    "exceptions": 0,
+
+                    "total": 0,
+
+                    "ai_processed": 0
+
+                }
+
+            )
 
             return run
 
@@ -196,6 +236,14 @@ class ReconciliationService:
                 else ReconciliationStatus.EXCEPTION
 
             )
+
+            if status == ReconciliationStatus.MATCHED:
+
+                result["payment"].status = PaymentStatus.SUCCESS
+
+            else:
+
+                result["payment"].status = PaymentStatus.FAILED
 
             if status == ReconciliationStatus.MATCHED:
 
@@ -331,33 +379,61 @@ class ReconciliationService:
         if not payloads:
             return
 
-        exception_records = []
+        new_exceptions = []
+
+        new_cases = []
 
         for reconciliation_result, payment, bank in payloads:
 
-            failed_leg = self.repository.get_failed_leg(payment.end_to_end_id)
-
-            exception_type, severity = self._classify(payment, bank, failed_leg)
-
-            exception_records.append(
-                Exception(
-                    reconciliation_result_id=reconciliation_result.id,
-                    exception_type=exception_type,
-                    severity=severity,
-                    status=ExceptionStatus.OPEN,
-                    detected_at=datetime.now(UTC)
-                )
+            failed_leg = self.repository.get_failed_leg(
+                payment.end_to_end_id
             )
 
-        self.repository.save_exceptions(exception_records)
+            exception_type, severity = self._classify(
+                payment,
+                bank,
+                failed_leg
+            )
 
-        cases = []
+            existing_exception = self.repository.get_open_exception(
+                payment.id
+            )
 
-        for index, exception_record in enumerate(exception_records, start=1):
+            if existing_exception:
 
-            payment = payloads[index - 1][1]
+                existing_exception.reconciliation_result_id = (
+                    reconciliation_result.id
+                )
 
-            failed_leg = self.repository.get_failed_leg(payment.end_to_end_id)
+                existing_exception.exception_type = exception_type
+
+                existing_exception.severity = severity
+
+                existing_exception.detected_at = datetime.now(UTC)
+
+                self.repository.db.commit()
+
+                continue
+
+            exception_record = Exception(
+
+                reconciliation_result_id=reconciliation_result.id,
+
+                exception_type=exception_type,
+
+                severity=severity,
+
+                status=ExceptionStatus.OPEN,
+
+                detected_at=datetime.now(UTC)
+
+            )
+
+            self.repository.db.add(exception_record)
+
+            self.repository.db.flush()
+
+            new_exceptions.append(exception_record)
 
             stuck = (
                 f" — stuck at {failed_leg.stage.value} "
@@ -365,27 +441,51 @@ class ReconciliationService:
                 if failed_leg else ""
             )
 
-            cases.append(
+            existing_case = self.repository.get_open_case(
+                exception_record.id
+            )
+
+            if existing_case:
+                continue
+
+            new_cases.append(
+
                 InvestigationCase(
+
                     exception_id=exception_record.id,
+
                     case_number=(
                         f"CASE-{datetime.now(UTC):%Y%m%d}-"
                         f"{exception_record.id.hex[:8].upper()}"
                     ),
+
                     title=(
-                        f"{exception_record.exception_type.value} exception "
+                        f"{exception_type.value} exception "
                         f"on {payment.transaction_reference}{stuck}"
                     ),
+
                     description=(
                         "Auto-generated investigation case from "
                         "reconciliation run."
                     ),
-                    priority=self._priority(exception_record.severity),
+
+                    due_date=self._due_date(
+                        self._priority(severity)
+                    ),
+
+                    priority=self._priority(severity),
+
                     status=CaseStatus.OPEN
+
                 )
+
             )
 
-        self.repository.save_cases(cases)
+        if new_cases:
+
+            self.repository.db.add_all(new_cases)
+
+        self.repository.db.commit()
 
     @staticmethod
     def _classify(payment, bank, failed_leg=None):
@@ -419,3 +519,19 @@ class ReconciliationService:
         }
 
         return mapping.get(severity, CasePriority.LOW)
+
+    @staticmethod
+    def _due_date(priority):
+
+        now = datetime.now(UTC)
+
+        if priority == CasePriority.CRITICAL:
+            return now + timedelta(hours=4)
+
+        if priority == CasePriority.HIGH:
+            return now + timedelta(days=1)
+
+        if priority == CasePriority.MEDIUM:
+            return now + timedelta(days=3)
+
+        return now + timedelta(days=5)

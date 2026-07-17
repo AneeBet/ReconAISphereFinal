@@ -1,47 +1,58 @@
-from datetime import UTC
-from datetime import datetime
-from uuid import UUID
+import uuid
 
-from fastapi import HTTPException
-from starlette.status import HTTP_404_NOT_FOUND
+import pandas as pd
 
-from app.mappers.investigation_mapper import (
-    InvestigationMapper,
+from app.models.bank_transaction import (
+    BankTransaction,
 )
 
-from app.models.attachment import (
-    Attachment,
+from app.models.payment_file import (
+    PaymentFile,
+    ProcessingStatus,
 )
 
-from app.models.comment import (
-    Comment,
+from app.models.payment_transaction import (
+    PaymentStatus,
+    PaymentTransaction,
 )
 
-from app.models.investigation_case import (
-    CaseStatus,
+from app.models.transaction_leg import (
+    LegStage,
+    LegStatus,
+    TransactionLeg,
+)
+
+from app.parser.normalizer import (
+    Normalizer,
 )
 
 from app.repositories.audit_repository import (
     AuditRepository,
 )
 
-from app.repositories.investigation_repository import (
-    InvestigationRepository,
+from app.repositories.file_repository import (
+    FileRepository,
 )
 
 from app.services.audit_service import (
     AuditService,
 )
 
+from app.storage.azure_blob_storage import (
+    AzureBlobStorage,
+)
 
-class InvestigationService:
+
+class FileService:
 
     def __init__(
         self,
-        repository: InvestigationRepository
+        repository: FileRepository
     ):
 
         self.repository = repository
+
+        self.storage = AzureBlobStorage()
 
         self.audit = AuditService(
 
@@ -53,252 +64,191 @@ class InvestigationService:
 
         )
 
-    def get_all(
+    def history(
 
         self
 
     ):
 
-        return [
+        return self.repository.get_all()
 
-            InvestigationMapper.to_response(
-
-                case
-
-            ).overview
-
-            for case in self.repository.get_all()
-
-        ]
-
-    def get_case(
-
+    async def upload_batch(
         self,
-
-        case_id: UUID
-
+        files: dict,
+        bank_id,
+        user_id
     ):
+        """Ingest any subset of {payment, bank, aml, fx, correspondent,
+        settlement} in one call. Each is stored to blob and normalized."""
 
-        case = self.repository.get_case(
+        summary = {"ingested": {}}
 
-            case_id
-
-        )
-
-        if case is None:
-
-            raise HTTPException(
-
-                status_code=HTTP_404_NOT_FOUND,
-
-                detail="Investigation case not found."
-
-            )
-
-        return InvestigationMapper.to_response(
-
-            case
-
-        )
-
-    def update_status(
-
-        self,
-
-        case_id: UUID,
-
-        status: CaseStatus
-
-    ):
-
-        case = self.repository.get_case(
-
-            case_id
-
-        )
-
-        if case is None:
-
-            raise HTTPException(
-
-                status_code=HTTP_404_NOT_FOUND,
-
-                detail="Investigation case not found."
-
-            )
-
-        old_value = {
-
-            "status": case.status.value
-
+        stage_map = {
+            "aml": LegStage.AML,
+            "fx": LegStage.FX,
+            "correspondent": LegStage.CORRESPONDENT,
+            "settlement": LegStage.SETTLEMENT,
         }
 
-        case.status = status
+        for kind, upload in files.items():
 
-        if status in (
+            if upload is None:
+                continue
 
-            CaseStatus.RESOLVED,
+            contents = await upload.read()
 
-            CaseStatus.CLOSED,
+            blob_name = f"{uuid.uuid4()}_{upload.filename}"
+            blob_url = self.storage.upload(f"{kind}/{blob_name}", contents)
 
-        ):
+            rows = Normalizer.rows(contents, upload.filename)
 
-            case.closed_at = datetime.now(
+            if kind == "payment":
+                self.repository.save_payment_transactions([
+                    self._build_payment_transaction(None, bank_id, r)
+                    for r in rows
+                ])
+            elif kind == "bank":
+                self.repository.save_bank_transactions([
+                    self._build_bank_transaction(bank_id, r) for r in rows
+                ])
+            else:
+                self.repository.save_legs([
+                    self._build_leg(stage_map[kind], r) for r in rows
+                ])
 
-                UTC
-
+            self.repository.create(
+                PaymentFile(
+                    bank_id=bank_id,
+                    file_name=blob_name,
+                    original_name=upload.filename,
+                    blob_url=blob_url,
+                    file_type=kind.upper(),
+                    checksum=str(uuid.uuid4()),
+                    uploaded_by_id=user_id,
+                    processing_status=ProcessingStatus.COMPLETED,
+                    total_records=len(rows),
+                    valid_records=len(rows),
+                    invalid_records=0
+                )
             )
 
-        updated = self.repository.update(
-
-            case
-
-        )
+            summary["ingested"][kind] = len(rows)
 
         self.audit.log(
-
-            user_id=case.owner_id,
-
-            entity_type="InvestigationCase",
-
-            entity_id=case.id,
-
-            action="STATUS_CHANGED",
-
-            old_value=old_value,
-
-            new_value={
-
-                "status": status.value
-
-            }
-
+            user_id=user_id,
+            entity_type="PaymentFile",
+            entity_id=bank_id,
+            action="BATCH_UPLOAD",
+            new_value=summary["ingested"]
         )
 
-        return updated
+        return summary
 
-    def add_comment(
+    def _build_leg(self, stage, row):
+        status = str(row.get("status", "PASS")).upper()
+        if status not in LegStatus.__members__:
+            status = "PASS"
+        return TransactionLeg(
+            end_to_end_id=str(row.get("end_to_end_id", "")),
+            stage=stage,
+            status=LegStatus[status],
+            detail=str(row.get("detail", "")) or None,
+            event_time=self._to_date(row.get("event_time"))
+        )
 
+    def _build_payment_transaction(
         self,
-
-        case_id: UUID,
-
-        user_id: UUID,
-
-        comment: str
-
+        payment_file_id,
+        bank_id,
+        row
     ):
 
-        case = self.repository.get_case(
+        return PaymentTransaction(
 
-            case_id
+            payment_file_id=payment_file_id,
 
-        )
+            bank_id=bank_id,
 
-        if case is None:
+            transaction_reference=str(row["transaction_reference"]),
 
-            raise HTTPException(
+            end_to_end_id=str(row["end_to_end_id"]),
 
-                status_code=HTTP_404_NOT_FOUND,
+            sender_account=str(row.get("sender_account", "")),
 
-                detail="Investigation case not found."
+            receiver_account=str(row.get("receiver_account", "")),
 
-            )
+            sender_name=str(row.get("sender_name", "")),
 
-        entity = Comment(
+            receiver_name=str(row.get("receiver_name", "")),
 
-            case_id=case_id,
+            amount=float(row["amount"]),
 
-            user_id=user_id,
+            currency=str(row["currency"]),
 
-            comment=comment
+            fx_rate=self._optional_float(row.get("fx_rate")),
 
-        )
+            payment_date=self._to_date(row["payment_date"]),
 
-        entity = self.repository.add_comment(
+            settlement_date=self._to_date(row.get("settlement_date")),
 
-            entity
+            payment_type=str(row.get("payment_type", "CROSS_BORDER")),
 
-        )
-
-        self.audit.log(
-
-            user_id=user_id,
-
-            entity_type="InvestigationCase",
-
-            entity_id=case_id,
-
-            action="COMMENT_ADDED"
+            status=PaymentStatus.PENDING
 
         )
 
-        return entity
-
-    def add_attachment(
-
+    def _build_bank_transaction(
         self,
-
-        case_id: UUID,
-
-        user_id: UUID,
-
-        file_name: str,
-
-        blob_url: str
-
+        bank_id,
+        row
     ):
 
-        case = self.repository.get_case(
+        return BankTransaction(
 
-            case_id
+            bank_id=bank_id,
 
-        )
+            transaction_reference=str(row["transaction_reference"]),
 
-        if case is None:
+            end_to_end_id=str(row["end_to_end_id"]),
 
-            raise HTTPException(
+            sender_account=str(row.get("sender_account", "")),
 
-                status_code=HTTP_404_NOT_FOUND,
+            receiver_account=str(row.get("receiver_account", "")),
 
-                detail="Investigation case not found."
+            sender_name=str(row.get("sender_name", "")),
 
-            )
+            receiver_name=str(row.get("receiver_name", "")),
 
-        entity = Attachment(
+            amount=float(row["amount"]),
 
-            case_id=case_id,
+            currency=str(row["currency"]),
 
-            uploaded_by_id=user_id,
+            fx_rate=self._optional_float(row.get("fx_rate")),
 
-            file_name=file_name,
+            payment_date=self._to_date(row["payment_date"]),
 
-            blob_url=blob_url
+            settlement_date=self._to_date(row.get("settlement_date")),
 
-        )
+            payment_type=str(row.get("payment_type", "CROSS_BORDER")),
 
-        entity = self.repository.add_attachment(
-
-            entity
+            status=str(row.get("status", "SETTLED"))
 
         )
 
-        self.audit.log(
+    @staticmethod
+    def _optional_float(value):
 
-            user_id=user_id,
+        if value is None or pd.isna(value):
 
-            entity_type="InvestigationCase",
+            return None
 
-            entity_id=case_id,
+        return float(value)
 
-            action="ATTACHMENT_ADDED",
+    @staticmethod
+    def _to_date(value):
 
-            new_value={
+        if value is None or pd.isna(value):
 
-                "file_name": file_name
+            return None
 
-            }
-
-        )
-
-        return entity
+        return pd.to_datetime(value).to_pydatetime()

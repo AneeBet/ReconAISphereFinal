@@ -1,7 +1,8 @@
 import csv
 import io
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC
+from datetime import datetime
 
 from fastapi import HTTPException
 from starlette.status import HTTP_404_NOT_FOUND
@@ -26,7 +27,9 @@ class ReportService:
         self,
         repository: ReportRepository
     ):
+
         self.repository = repository
+
         self.storage = AzureBlobStorage()
 
     def dashboard_report(
@@ -35,16 +38,13 @@ class ReportService:
 
         metrics = self.repository.dashboard_metrics()
 
-        matched = metrics["matched"]
-
         total = metrics["transactions"]
+
+        matched = metrics["matched"]
 
         exceptions = metrics["exceptions"]
 
-        unmatched = max(
-            total - matched,
-            0
-        )
+        pending = metrics["pending"]
 
         return DashboardReport(
 
@@ -52,7 +52,7 @@ class ReportService:
 
             matched=matched,
 
-            unmatched=unmatched,
+            unmatched=pending,
 
             exceptions=exceptions
 
@@ -68,8 +68,11 @@ class ReportService:
         headers, rows = self._build_dataset(report_type)
 
         buffer = io.StringIO()
+
         writer = csv.writer(buffer)
+
         writer.writerow(headers)
+
         writer.writerows(rows)
 
         report_name = (
@@ -78,14 +81,21 @@ class ReportService:
         )
 
         self.storage.upload(
+
             f"reports/{report_name}",
+
             buffer.getvalue().encode("utf-8")
+
         )
 
         return ReportResponse(
+
             report_name=report_name,
+
             report_url=f"/reports/download/{report_name}",
+
             generated_at=datetime.now(UTC)
+
         )
 
     def download(
@@ -94,49 +104,118 @@ class ReportService:
     ):
 
         try:
-            return self.storage.download(f"reports/{report_name}")
-        except Exception:
-            raise HTTPException(
-                status_code=HTTP_404_NOT_FOUND,
-                detail="Report not found."
+
+            return self.storage.download(
+                f"reports/{report_name}"
             )
 
-    def _build_dataset(self, report_type):
+        except Exception:
+
+            raise HTTPException(
+
+                status_code=HTTP_404_NOT_FOUND,
+
+                detail="Report not found."
+
+            )
+
+    def _build_dataset(
+        self,
+        report_type
+    ):
 
         if report_type == "EXCEPTIONS":
-            headers = ["exception_type", "severity", "status", "reference"]
+
+            headers = [
+                "exception_type",
+                "severity",
+                "status",
+                "reference"
+            ]
+
             rows = [
+
                 [
+
                     e.exception_type.value,
+
                     e.severity.value,
+
                     e.status.value,
+
                     e.reconciliation_result.payment_transaction
                     .transaction_reference,
+
                 ]
+
                 for e in self.repository.exception_rows()
+
             ]
+
             return headers, rows
 
         if report_type == "TRANSACTIONS":
-            headers = ["reference", "amount", "currency", "status"]
-            rows = [
-                [t.transaction_reference, float(t.amount), t.currency,
-                 t.status.value]
-                for t in self.repository.transaction_rows()
+
+            headers = [
+                "reference",
+                "amount",
+                "currency",
+                "status"
             ]
+
+            rows = [
+
+                [
+
+                    t.transaction_reference,
+
+                    float(t.amount),
+
+                    t.currency,
+
+                    t.status.value,
+
+                ]
+
+                for t in self.repository.transaction_rows()
+
+            ]
+
             return headers, rows
 
-        headers = ["payment_ref", "bank_ref", "match_type", "confidence",
-                   "status"]
+        headers = [
+
+            "payment_ref",
+
+            "bank_ref",
+
+            "match_type",
+
+            "confidence",
+
+            "status",
+
+        ]
+
         rows = [
+
             [
+
                 r.payment_transaction.transaction_reference,
+
                 r.bank_transaction.transaction_reference
                 if r.bank_transaction else "",
+
                 r.match_type.value,
+
                 float(r.confidence_score),
+
                 r.reconciliation_status.value,
+
             ]
+
             for r in self.repository.reconciliation_rows()
+
         ]
+
         return headers, rows

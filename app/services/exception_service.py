@@ -1,5 +1,6 @@
 from datetime import UTC
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import HTTPException
 from starlette.status import HTTP_404_NOT_FOUND
@@ -10,6 +11,10 @@ from app.mappers.exception_mapper import (
 
 from app.models.exception import (
     ExceptionStatus,
+)
+
+from app.models.investigation_case import (
+    CaseStatus,
 )
 
 from app.repositories.audit_repository import (
@@ -66,9 +71,9 @@ class ExceptionService:
 
         self,
 
-        exception_id,
+        exception_id: UUID,
 
-        user_id
+        user_id: UUID
 
     ):
 
@@ -94,11 +99,17 @@ class ExceptionService:
 
         }
 
-        exception.assigned_to = str(
+        # Update exception owner
+        exception.assigned_to = str(user_id)
 
-            user_id
+        # Keep investigation case in sync
+        if exception.investigation_case is not None:
 
-        )
+            exception.investigation_case.owner_id = user_id
+
+            exception.investigation_case.status = (
+                CaseStatus.ASSIGNED
+            )
 
         updated = self.repository.update(
 
@@ -132,9 +143,9 @@ class ExceptionService:
 
         self,
 
-        exception_id,
+        exception_id: UUID,
 
-        resolution_notes
+        resolution_notes: str
 
     ):
 
@@ -162,6 +173,12 @@ class ExceptionService:
 
         exception.status = ExceptionStatus.RESOLVED
 
+        if exception.investigation_case:
+
+            exception.investigation_case.status = CaseStatus.RESOLVED
+
+            exception.investigation_case.closed_at = datetime.now(UTC)
+
         exception.resolution_notes = resolution_notes
 
         exception.resolved_at = datetime.now(
@@ -169,6 +186,17 @@ class ExceptionService:
             UTC
 
         )
+
+        # Keep linked investigation case in sync
+        if exception.investigation_case is not None:
+
+            exception.investigation_case.status = (
+                CaseStatus.RESOLVED
+            )
+
+            exception.investigation_case.closed_at = (
+                exception.resolved_at
+            )
 
         updated = self.repository.update(
 
@@ -178,7 +206,7 @@ class ExceptionService:
 
         self.audit.log(
 
-            user_id=exception.assigned_to,
+            user_id=UUID(exception.assigned_to),
 
             entity_type="Exception",
 
@@ -199,4 +227,3 @@ class ExceptionService:
         )
 
         return updated
-

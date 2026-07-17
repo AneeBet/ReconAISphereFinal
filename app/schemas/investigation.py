@@ -8,6 +8,9 @@ from pydantic import ConfigDict
 class InvestigationCaseSummary(BaseModel):
     id: UUID
     case_number: str
+
+    transaction_reference: str   # <-- ADD THIS
+
     title: str
     priority: str
     owner: str | None
@@ -20,6 +23,7 @@ class InvestigationCaseSummary(BaseModel):
 class InvestigationOverview(BaseModel):
     id: UUID
     case_number: str
+    transaction_reference: str
     title: str
     description: str | None
     priority: str

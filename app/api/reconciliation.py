@@ -17,7 +17,6 @@ from app.repositories.reconciliation_repository import (
 
 from app.schemas.reconciliation import (
     ReconciliationItem,
-    RunReconciliationRequest,
 )
 
 from app.services.reconciliation_service import (
@@ -41,8 +40,6 @@ router = APIRouter(
 )
 def run_reconciliation(
 
-    request: RunReconciliationRequest,
-
     current_user=Depends(
         require_ops
     ),
@@ -58,8 +55,6 @@ def run_reconciliation(
         ReconciliationRepository(db)
 
     ).run(
-
-        request.payment_file_id,
 
         current_user.id
 

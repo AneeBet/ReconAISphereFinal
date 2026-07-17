@@ -9,6 +9,8 @@ from app.models.payment_transaction import PaymentTransaction
 from app.models.reconciliation_result import ReconciliationResult
 from app.models.reconciliation_run import ReconciliationRun
 
+from app.models.exception import Exception, ExceptionStatus
+from app.models.investigation_case import InvestigationCase, CaseStatus
 
 class ReconciliationRepository:
 
@@ -38,25 +40,6 @@ class ReconciliationRepository:
         self.db.refresh(run)
 
         return run
-
-    def get_payment_transactions(
-        self,
-        payment_file_id: UUID
-    ):
-
-        return list(
-
-            self.db.scalars(
-
-                select(PaymentTransaction)
-
-                .where(
-                    PaymentTransaction.payment_file_id == payment_file_id
-                )
-
-            ).all()
-
-        )
 
     def get_pending_payment_transactions(
         self
@@ -121,6 +104,39 @@ class ReconciliationRepository:
             key=lambda l: stage_order.index(l.stage.value)
             if l.stage.value in stage_order else 99
         )[0]
+
+    def get_open_exception(
+        self,
+        payment_transaction_id
+        ):
+
+        return self.db.scalar(
+
+            select(Exception)
+            .join(ReconciliationResult)
+            .where(
+                ReconciliationResult.payment_transaction_id
+                == payment_transaction_id,
+                Exception.status == ExceptionStatus.OPEN
+            )
+
+            )
+
+
+    def get_open_case(
+        self,
+        exception_id
+        ):
+
+        return self.db.scalar(
+
+            select(InvestigationCase)
+            .where(
+                InvestigationCase.exception_id == exception_id,
+                InvestigationCase.status == CaseStatus.OPEN
+            )
+
+            )
 
     def mark_reconciled(self, payments, banks):
         for p in payments:
